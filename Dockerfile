@@ -5,6 +5,7 @@ FROM node:20-bookworm
 RUN apt-get update && apt-get install -y \
     git build-essential python3 flex bison \
     libz3-dev z3 yosys autoconf pkg-config wget \
+    help2man zlib1g-dev \
     && rm -rf /var/lib/apt/lists/*
 
 # Install modern CMake (Slang requires >= 3.28, Bookworm has 3.25)
@@ -14,7 +15,7 @@ RUN wget -qO- "https://github.com/Kitware/CMake/releases/download/v3.29.3/cmake-
 RUN git clone https://github.com/MikePopoloski/slang.git /tmp/slang && \
     cd /tmp/slang && \
     cmake -B build -DCMAKE_BUILD_TYPE=Release && \
-    cmake --build build -j$(nproc) && \
+    cmake --build build -j1 && \
     cmake --install build && \
     rm -rf /tmp/slang
 
@@ -25,7 +26,7 @@ RUN git clone https://github.com/verilator/verilator.git /tmp/verilator && \
     git checkout v5.020 && \
     autoconf && \
     ./configure && \
-    make -j$(nproc) && \
+    make -j1 && \
     make install && \
     rm -rf /tmp/verilator
 
