@@ -10,14 +10,14 @@ app.use(cors());
 app.use(express.json());
 
 const JWT_SECRET = process.env.JWT_SECRET || "logicsilicon_secure_jwt_key_2024";
-const GOOGLE_WEB_APP_URL = "https://script.google.com/macros/s/AKfycbzhtk4rISUDJvMb3nLzJq2CBY5cVnm9kAnL_fuW77MLOkoR0-_dS0nKtmCwBjpD3mpAnQ/exec";
+const GOOGLE_WEB_APP_URL = "[https://script.google.com/macros/s/AKfycbzhtk4rISUDJvMb3nLzJq2CBY5cVnm9kAnL_fuW77MLOkoR0-_dS0nKtmCwBjpD3mpAnQ/exec](https://script.google.com/macros/s/AKfycbzhtk4rISUDJvMb3nLzJq2CBY5cVnm9kAnL_fuW77MLOkoR0-_dS0nKtmCwBjpD3mpAnQ/exec)";
 
 // ==========================================
 // VCD TO JSON PARSER (For Logic Analyzer)
 // ==========================================
 function parseVCDToJSON(vcdText) {
     if (!vcdText) return null;
-    const lines = vcdText.split('\n');
+    const lines = vcdText.split('\\n');
     const symbolMap = {}; 
     const timeline = [];
     let currentState = {};
@@ -26,32 +26,24 @@ function parseVCDToJSON(vcdText) {
 
     lines.forEach(line => {
         line = line.trim();
-        if (line.startsWith('$scope')) {
-            const parts = line.split(/\s+/);
-            if (parts.length >= 3) currentScope.push(parts[2]);
-        } else if (line.startsWith('$upscope')) {
+        if (line.startsWith('$scope')) {             const parts = line.split(/\\s+/);             if (parts.length >= 3) currentScope.push(parts[2]);         } else if (line.startsWith('$upscope')) {
             currentScope.pop();
         } else if (line.startsWith('$var')) {
-            const parts = line.split(/\s+/);
+            const parts = line.split(/\\s+/);
             if(parts.length >= 5) {
                 const symbol = parts[3];
                 const name = parts[4];
                 const fullName = currentScope.length > 0 ? [...currentScope, name].join('.') : name;
                 symbolMap[symbol] = fullName;
-                currentState[fullName] = 'x'; // Default uninitialized
+                currentState[fullName] = 'x';
             }
         } else if (line.startsWith('#')) {
             const time = parseInt(line.substring(1));
-            // Save state snapshot on time transition
             if (currentTime !== null && time !== currentTime) {
                 timeline.push({ time: currentTime, state: { ...currentState } });
             }
             currentTime = time;
-        } else if (line.match(/^[01xXzZ]/) && !line.startsWith('$')) {
-            const val = line[0];
-            const sym = line.substring(1);
-            if (symbolMap[sym]) currentState[symbolMap[sym]] = val;
-        } else if ((line.startsWith('b') || line.startsWith('B')) && !line.startsWith('$')) {
+        } else if (line.match(/^[01xXzZ]/) && !line.startsWith('$')) {             const val = line[0];             const sym = line.substring(1);             if (symbolMap[sym]) currentState[symbolMap[sym]] = val;         } else if ((line.startsWith('b') \vert{}\vert{} line.startsWith('B')) && !line.startsWith('$')) {
             const parts = line.split(' ');
             if (parts.length === 2) {
                 const val = parts[0].substring(1);
@@ -66,7 +58,6 @@ function parseVCDToJSON(vcdText) {
     }
     return timeline;
 }
-
 
 // ==========================================
 // 1. AUTHENTICATION ENDPOINT
@@ -98,9 +89,7 @@ app.post('/login', async (req, res) => {
 function authenticateToken(req, res, next) {
     const authHeader = req.headers['authorization'];
     const token = authHeader && authHeader.split(' ')[1];
-
     if (!token) return res.status(401).json({ status: "error", output: "Access Denied: No JWT Token Provided." });
-
     jwt.verify(token, JWT_SECRET, (err, user) => {
         if (err) return res.status(403).json({ status: "error", output: "Access Denied: Invalid or Expired Token." });
         req.user = user;
@@ -109,78 +98,75 @@ function authenticateToken(req, res, next) {
 }
 
 // ==========================================
-// 3. SECURE SIMULATION (SLANG + VERILATOR)
+// 3. SECURE SIMULATION (VERILATOR 5 NATIVE)
 // ==========================================
 app.post('/run', authenticateToken, (req, res) => {
     const code = req.body.code;
-    if (!code) return res.status(400).json({ error: "No Verilog code provided." });
+    if (!code) return res.status(400).json({ error: "No Verilog/SystemVerilog code provided." });
 
     const runId = Date.now().toString() + Math.floor(Math.random() * 1000);
     const runDir = path.join('/tmp', runId);
     fs.mkdirSync(runDir, { recursive: true });
 
-    const filePath = path.join(runDir, 'design.sv');
+    // The frontend bundles design and TB into a single payload
+    const filePath = path.join(runDir, 'project.sv');
     fs.writeFileSync(filePath, code);
 
-    // Phase 1: Fast Linting & Parsing via Slang
-    exec(`slang ${filePath}`, { timeout: 5000, cwd: runDir }, (slangErr, slangStdout, slangStderr) => {
-        if (slangErr) {
+    // Verilator 5 flags:
+    // --binary: Auto-generates the C++ main loop and compiles an executable
+    // --timing: Enables support for #delays and @(events)
+    // --trace: Prepares the binary for VCD dumping
+    // -Wno-fatal: Prevents non-critical warnings from halting compilation
+    const compileCmd = \`verilator --binary --timing --trace -Wno-fatal -o sim_bin project.sv\`;
+
+    exec(compileCmd, { timeout: 30000, cwd: runDir }, (compileErr, compileStdout, compileStderr) => {
+        if (compileErr) {
             fs.rmSync(runDir, { recursive: true, force: true });
-            return res.json({ status: "error", output: "--- SLANG SYNTAX ERROR ---\n" + (slangStderr || slangStdout || slangErr.message) });
+            // Verilator outputs errors to stderr
+            return res.json({ status: "error", output: compileStderr || compileStdout || compileErr.message });
         }
 
-        // Phase 2: Compile & Execute with Verilator 5 + Z3
-        // --binary builds the executable, --trace enables VCD, --timing enables #delays, -o forces output name
-        const verilatorCmd = `verilator --binary --trace --assert --timing -Wno-fatal -o sim_exec ${filePath}`;
-        
-        exec(verilatorCmd, { timeout: 25000, cwd: runDir }, (verErr, verStdout, verStderr) => {
-            if (verErr) {
-                fs.rmSync(runDir, { recursive: true, force: true });
-                return res.json({ status: "error", output: "--- VERILATOR COMPILE ERROR ---\n" + (verStderr || verStdout || verErr.message) });
+        // Execute the compiled simulation binary
+        exec(\`./sim_bin\`, { timeout: 15000, cwd: runDir }, (runErr, runStdout, runStderr) => {
+            let vcdData = null;
+            let vcdJson = null;
+
+            try {
+                const files = fs.readdirSync(runDir);
+                const vcdFile = files.find(f => f.endsWith('.vcd'));
+                if (vcdFile) {
+                    vcdData = fs.readFileSync(path.join(runDir, vcdFile), 'utf8');
+                    vcdJson = parseVCDToJSON(vcdData);
+                }
+            } catch (err) {
+                console.error("VCD Read Error:", err);
             }
 
-            // Phase 3: Run the Compiled Executable
-            exec(`./obj_dir/sim_exec`, { timeout: 15000, cwd: runDir }, (runErr, runStdout, runStderr) => {
-                let vcdData = null;
-                let vcdJson = null;
+            fs.rmSync(runDir, { recursive: true, force: true });
 
-                try {
-                    const files = fs.readdirSync(runDir);
-                    const vcdFile = files.find(f => f.endsWith('.vcd'));
-                    if (vcdFile) {
-                        vcdData = fs.readFileSync(path.join(runDir, vcdFile), 'utf8');
-                        vcdJson = parseVCDToJSON(vcdData); // Parse directly to JSON!
-                    }
-                } catch (err) {
-                    console.error("VCD Read Error:", err);
-                }
+            if (runErr) {
+                return res.json({ status: "error", output: runStderr || runStdout || runErr.message });
+            }
 
-                fs.rmSync(runDir, { recursive: true, force: true });
-
-                if (runErr) return res.json({ status: "error", output: runStderr || runStdout || runErr.message });
-
-                return res.json({ status: "success", output: runStdout, vcd: vcdData, vcdJson: vcdJson });
-            });
+            return res.json({ status: "success", output: runStdout, vcd: vcdData, vcdJson: vcdJson });
         });
     });
 });
 
 // ==========================================
-// 4. SECURE SYNTHESIS (YOSYS)
+// 4. SECURE SYNTHESIS (YOSYS) - Unchanged
 // ==========================================
 app.post('/api/synthesize', authenticateToken, (req, res) => {
     const verilogCode = req.body.code;
     if (!verilogCode) return res.status(400).json({ error: "No Verilog code provided" });
 
     const runId = Date.now().toString() + Math.floor(Math.random() * 1000);
-    const vFile = path.join('/tmp', `temp_${runId}.sv`);
-    const jsonFile = path.join('/tmp', `temp_${runId}.json`);
+    const vFile = path.join('/tmp', \`temp_\${runId}.sv\`);
+    const jsonFile = path.join('/tmp', \`temp_\${runId}.json\`);
 
     try {
         fs.writeFileSync(vFile, verilogCode);
-
-        // Prep translates the code to generic logic gates and exports the JSON graph
-        const yosysCommand = `yosys -p "read_verilog -sv ${vFile}; prep; write_json ${jsonFile}"`;
+        const yosysCommand = \`yosys -p "read_verilog -sv \${vFile}; prep; write_json \${jsonFile}"\`;
 
         exec(yosysCommand, { timeout: 15000 }, (error, stdout, stderr) => {
             if (fs.existsSync(vFile)) fs.unlinkSync(vFile);
@@ -206,31 +192,29 @@ app.post('/api/synthesize', authenticateToken, (req, res) => {
 });
 
 // ==========================================
-// 5. SECURED GITHUB UPLOAD ENDPOINT
+// 5. SECURED GITHUB UPLOAD ENDPOINT - Unchanged
 // ==========================================
 app.post('/save-github', authenticateToken, async (req, res) => {
     const { filename, fileBase64, owner, repo, pat } = req.body;
-
     if (!filename || !fileBase64 || !owner || !repo || !pat) {
         return res.status(400).json({ status: 'error', message: 'Missing required GitHub parameters.' });
     }
 
     try {
-        const response = await fetch(`https://api.github.com/repos/${owner}/${repo}/contents/${filename}`, {
+        const response = await fetch(\`[https://api.github.com/repos/](https://api.github.com/repos/)\${owner}/\${repo}/contents/\${filename}\`, {
             method: 'PUT',
             headers: {
-                'Authorization': `Bearer ${pat}`,
+                'Authorization': \`Bearer \${pat}\`,
                 'Accept': 'application/vnd.github.v3+json',
                 'User-Agent': 'LogicSilicon-IDE'
             },
             body: JSON.stringify({
-                message: `Auto-saved ${filename} via LogicSilicon Playground`,
+                message: \`Auto-saved \${filename} via LogicSilicon Playground\`,
                 content: fileBase64
             })
         });
 
         const data = await response.json();
-
         if (response.ok) {
             res.json({ status: 'success', url: data.content.html_url });
         } else {
@@ -244,5 +228,5 @@ app.post('/save-github', authenticateToken, async (req, res) => {
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-    console.log(`Unified LogicSilicon Backend (Verilator + Slang + Z3 + Yosys) running on port ${PORT}`);
+    console.log(\`Unified LogicSilicon Backend (Verilator + Yosys) running on port \${PORT}\`);
 });
