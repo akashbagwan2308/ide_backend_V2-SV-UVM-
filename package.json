@@ -1,7 +1,7 @@
 {
   "name": "logicsilicon-unified-api",
-  "version": "2.0.0",
-  "description": "Unified API for Icarus Verilog Simulation and Yosys Synthesis",
+  "version": "3.0.0",
+  "description": "Unified API for Verilator 5 Simulation and Yosys Synthesis",
   "main": "server.js",
   "scripts": {
     "start": "node server.js"
