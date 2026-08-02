@@ -1,41 +1,32 @@
-# Use Ubuntu as the base for building Verilator
-FROM ubuntu:22.04
+# 1. Use the official pre-built Verilator 5 image as the base
+# This completely skips the 15-minute C++ compilation step
+FROM verilator/verilator:5.026
 
-# Prevent interactive prompts during apt installations
-ENV DEBIAN_FRONTEND=noninteractive
+# 2. Switch to the root user to install Node.js and dependencies
+USER root
 
-# Install dependencies required for Verilator and Node.js
-RUN apt-get update && apt-get install -y \
-    git perl python3 make autoconf g++ flex bison ccache \
-    libgoogle-perftools-dev numactl perl-doc \
-    libfl2 libfl-dev zlib1g zlib1g-dev \
-    curl ca-certificates \
+# 3. Install Node.js (v18) and standard build tools needed for runtime
+RUN apt-get update && apt-get install -y curl make g++ \
     && curl -fsSL https://deb.nodesource.com/setup_18.x | bash - \
     && apt-get install -y nodejs \
     && rm -rf /var/lib/apt/lists/*
 
-# Clone and build Verilator 5 
-RUN git clone https://github.com/verilator/verilator /tmp/verilator \
-    && cd /tmp/verilator \
-    && git checkout v5.026 \
-    && autoconf \
-    && ./configure \
-    && make -j2 \
-    && make install \
-    && rm -rf /tmp/verilator
-
-# Create app directory
+# 4. Create and set the working directory for the API
 WORKDIR /usr/src/app
 
-# Install app dependencies
+# 5. Copy package files and install Node.js dependencies
 COPY package*.json ./
 RUN npm install
 
-# Bundle app source
+# 6. Copy the server code
 COPY server.js ./
 
-# Expose the port the app runs on
+# 7. IMPORTANT: Override the default Verilator entrypoint
+# The official image defaults to running 'verilator', we need it to run Node
+ENTRYPOINT []
+
+# 8. Expose the API port
 EXPOSE 3000
 
-# Command to run the application
-CMD [ "npm", "start" ]
+# 9. Start the LogicSilicon Unified API
+CMD [ "node", "server.js" ]
