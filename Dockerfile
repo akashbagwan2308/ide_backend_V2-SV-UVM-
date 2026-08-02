@@ -1,6 +1,6 @@
 # 1. Use the official pre-built Verilator 5 image as the base
 # This completely skips the 15-minute C++ compilation step
-FROM verilator/verilator:5.026
+FROM verilator/verilator:v5.026
 
 # 2. Switch to the root user to install Node.js and dependencies
 USER root
