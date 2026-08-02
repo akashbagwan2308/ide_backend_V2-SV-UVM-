@@ -33,7 +33,7 @@ function parseVCDToJSON(vcdText) {
             currentScope.pop();
         } else if (line.startsWith('$var')) {
             const parts = line.split(/\s+/);
-            if(parts.length >= 5) {
+            if (parts.length >= 5) {
                 const symbol = parts[3];
                 const name = parts[4];
                 const fullName = currentScope.length > 0 ? [...currentScope, name].join('.') : name;
@@ -73,7 +73,8 @@ app.post('/login', async (req, res) => {
     const { email, authString, role } = req.body;
     try {
         const googleResponse = await fetch(GOOGLE_WEB_APP_URL, {
-            method: 'POST', headers: {'Content-Type': 'text/plain'}, 
+            method: 'POST', 
+            headers: {'Content-Type': 'text/plain'}, 
             body: JSON.stringify({ action: 'login', role: role || 'student', email: email, authString: authString })
         });
         const data = await googleResponse.json();
@@ -115,34 +116,41 @@ app.post('/run', authenticateToken, (req, res) => {
     const runDir = path.join('/tmp', runId);
     fs.mkdirSync(runDir, { recursive: true });
 
-    // The frontend bundles design and TB into a single payload
+    // Frontend bundles design and TB into a single payload
     const filePath = path.join(runDir, 'project.sv');
     fs.writeFileSync(filePath, code);
 
-    // Verilator 5 flags:
-    // --binary: Auto-generates the C++ main loop and compiles an executable
-    // --timing: Enables support for #delays and @(events)
-    // --trace: Prepares the binary for VCD dumping
-    // -Wno-fatal: Prevents non-critical warnings from halting compilation
+    // Verilator 5 compilation command
     const compileCmd = `verilator --binary --timing --trace -Wno-fatal -o sim_bin project.sv`;
 
     exec(compileCmd, { timeout: 30000, cwd: runDir }, (compileErr, compileStdout, compileStderr) => {
         if (compileErr) {
             fs.rmSync(runDir, { recursive: true, force: true });
-            // Verilator outputs errors to stderr
             return res.json({ status: "error", output: compileStderr || compileStdout || compileErr.message });
         }
 
-        // Execute the compiled simulation binary
-        exec(`./sim_bin`, { timeout: 15000, cwd: runDir }, (runErr, runStdout, runStderr) => {
+        // Execute the compiled binary inside obj_dir
+        const binPath = path.join(runDir, 'obj_dir', 'sim_bin');
+        exec(`./obj_dir/sim_bin`, { timeout: 15000, cwd: runDir }, (runErr, runStdout, runStderr) => {
             let vcdData = null;
             let vcdJson = null;
 
             try {
-                const files = fs.readdirSync(runDir);
-                const vcdFile = files.find(f => f.endsWith('.vcd'));
-                if (vcdFile) {
-                    vcdData = fs.readFileSync(path.join(runDir, vcdFile), 'utf8');
+                // Search for generated .vcd waveform file in runDir and obj_dir
+                let vcdFilePath = null;
+                const rootFiles = fs.readdirSync(runDir);
+                const rootVcd = rootFiles.find(f => f.endsWith('.vcd'));
+
+                if (rootVcd) {
+                    vcdFilePath = path.join(runDir, rootVcd);
+                } else if (fs.existsSync(path.join(runDir, 'obj_dir'))) {
+                    const objFiles = fs.readdirSync(path.join(runDir, 'obj_dir'));
+                    const objVcd = objFiles.find(f => f.endsWith('.vcd'));
+                    if (objVcd) vcdFilePath = path.join(runDir, 'obj_dir', objVcd);
+                }
+
+                if (vcdFilePath) {
+                    vcdData = fs.readFileSync(vcdFilePath, 'utf8');
                     vcdJson = parseVCDToJSON(vcdData);
                 }
             } catch (err) {
