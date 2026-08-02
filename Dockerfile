@@ -14,13 +14,13 @@ RUN apt-get update && apt-get install -y \
     && apt-get install -y nodejs \
     && rm -rf /var/lib/apt/lists/*
 
-# Clone and build Verilator 5 (v5.026+ supports --timing and advanced SV)
+# Clone and build Verilator 5 
 RUN git clone https://github.com/verilator/verilator /tmp/verilator \
     && cd /tmp/verilator \
     && git checkout v5.026 \
     && autoconf \
     && ./configure \
-    && make -j$(nproc) \
+    && make -j2 \
     && make install \
     && rm -rf /tmp/verilator
 
