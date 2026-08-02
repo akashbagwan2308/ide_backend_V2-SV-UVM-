@@ -10,14 +10,14 @@ app.use(cors());
 app.use(express.json());
 
 const JWT_SECRET = process.env.JWT_SECRET || "logicsilicon_secure_jwt_key_2024";
-const GOOGLE_WEB_APP_URL = "[https://script.google.com/macros/s/AKfycbzhtk4rISUDJvMb3nLzJq2CBY5cVnm9kAnL_fuW77MLOkoR0-_dS0nKtmCwBjpD3mpAnQ/exec](https://script.google.com/macros/s/AKfycbzhtk4rISUDJvMb3nLzJq2CBY5cVnm9kAnL_fuW77MLOkoR0-_dS0nKtmCwBjpD3mpAnQ/exec)";
+const GOOGLE_WEB_APP_URL = "https://script.google.com/macros/s/AKfycbzhtk4rISUDJvMb3nLzJq2CBY5cVnm9kAnL_fuW77MLOkoR0-_dS0nKtmCwBjpD3mpAnQ/exec";
 
 // ==========================================
 // VCD TO JSON PARSER (For Logic Analyzer)
 // ==========================================
 function parseVCDToJSON(vcdText) {
     if (!vcdText) return null;
-    const lines = vcdText.split('\\n');
+    const lines = vcdText.split('\n');
     const symbolMap = {}; 
     const timeline = [];
     let currentState = {};
@@ -26,10 +26,13 @@ function parseVCDToJSON(vcdText) {
 
     lines.forEach(line => {
         line = line.trim();
-        if (line.startsWith('$scope')) {             const parts = line.split(/\\s+/);             if (parts.length >= 3) currentScope.push(parts[2]);         } else if (line.startsWith('$upscope')) {
+        if (line.startsWith('$scope')) {
+            const parts = line.split(/\s+/);
+            if (parts.length >= 3) currentScope.push(parts[2]);
+        } else if (line.startsWith('$upscope')) {
             currentScope.pop();
         } else if (line.startsWith('$var')) {
-            const parts = line.split(/\\s+/);
+            const parts = line.split(/\s+/);
             if(parts.length >= 5) {
                 const symbol = parts[3];
                 const name = parts[4];
@@ -43,7 +46,11 @@ function parseVCDToJSON(vcdText) {
                 timeline.push({ time: currentTime, state: { ...currentState } });
             }
             currentTime = time;
-        } else if (line.match(/^[01xXzZ]/) && !line.startsWith('$')) {             const val = line[0];             const sym = line.substring(1);             if (symbolMap[sym]) currentState[symbolMap[sym]] = val;         } else if ((line.startsWith('b') \vert{}\vert{} line.startsWith('B')) && !line.startsWith('$')) {
+        } else if (line.match(/^[01xXzZ]/) && !line.startsWith('$')) {
+            const val = line[0];
+            const sym = line.substring(1);
+            if (symbolMap[sym]) currentState[symbolMap[sym]] = val;
+        } else if ((line.startsWith('b') || line.startsWith('B')) && !line.startsWith('$')) {
             const parts = line.split(' ');
             if (parts.length === 2) {
                 const val = parts[0].substring(1);
@@ -117,7 +124,7 @@ app.post('/run', authenticateToken, (req, res) => {
     // --timing: Enables support for #delays and @(events)
     // --trace: Prepares the binary for VCD dumping
     // -Wno-fatal: Prevents non-critical warnings from halting compilation
-    const compileCmd = \`verilator --binary --timing --trace -Wno-fatal -o sim_bin project.sv\`;
+    const compileCmd = `verilator --binary --timing --trace -Wno-fatal -o sim_bin project.sv`;
 
     exec(compileCmd, { timeout: 30000, cwd: runDir }, (compileErr, compileStdout, compileStderr) => {
         if (compileErr) {
@@ -127,7 +134,7 @@ app.post('/run', authenticateToken, (req, res) => {
         }
 
         // Execute the compiled simulation binary
-        exec(\`./sim_bin\`, { timeout: 15000, cwd: runDir }, (runErr, runStdout, runStderr) => {
+        exec(`./sim_bin`, { timeout: 15000, cwd: runDir }, (runErr, runStdout, runStderr) => {
             let vcdData = null;
             let vcdJson = null;
 
@@ -154,19 +161,19 @@ app.post('/run', authenticateToken, (req, res) => {
 });
 
 // ==========================================
-// 4. SECURE SYNTHESIS (YOSYS) - Unchanged
+// 4. SECURE SYNTHESIS (YOSYS)
 // ==========================================
 app.post('/api/synthesize', authenticateToken, (req, res) => {
     const verilogCode = req.body.code;
     if (!verilogCode) return res.status(400).json({ error: "No Verilog code provided" });
 
     const runId = Date.now().toString() + Math.floor(Math.random() * 1000);
-    const vFile = path.join('/tmp', \`temp_\${runId}.sv\`);
-    const jsonFile = path.join('/tmp', \`temp_\${runId}.json\`);
+    const vFile = path.join('/tmp', `temp_${runId}.sv`);
+    const jsonFile = path.join('/tmp', `temp_${runId}.json`);
 
     try {
         fs.writeFileSync(vFile, verilogCode);
-        const yosysCommand = \`yosys -p "read_verilog -sv \${vFile}; prep; write_json \${jsonFile}"\`;
+        const yosysCommand = `yosys -p "read_verilog -sv ${vFile}; prep; write_json ${jsonFile}"`;
 
         exec(yosysCommand, { timeout: 15000 }, (error, stdout, stderr) => {
             if (fs.existsSync(vFile)) fs.unlinkSync(vFile);
@@ -192,7 +199,7 @@ app.post('/api/synthesize', authenticateToken, (req, res) => {
 });
 
 // ==========================================
-// 5. SECURED GITHUB UPLOAD ENDPOINT - Unchanged
+// 5. SECURED GITHUB UPLOAD ENDPOINT
 // ==========================================
 app.post('/save-github', authenticateToken, async (req, res) => {
     const { filename, fileBase64, owner, repo, pat } = req.body;
@@ -201,15 +208,15 @@ app.post('/save-github', authenticateToken, async (req, res) => {
     }
 
     try {
-        const response = await fetch(\`[https://api.github.com/repos/](https://api.github.com/repos/)\${owner}/\${repo}/contents/\${filename}\`, {
+        const response = await fetch(`https://api.github.com/repos/${owner}/${repo}/contents/${filename}`, {
             method: 'PUT',
             headers: {
-                'Authorization': \`Bearer \${pat}\`,
+                'Authorization': `Bearer ${pat}`,
                 'Accept': 'application/vnd.github.v3+json',
                 'User-Agent': 'LogicSilicon-IDE'
             },
             body: JSON.stringify({
-                message: \`Auto-saved \${filename} via LogicSilicon Playground\`,
+                message: `Auto-saved ${filename} via LogicSilicon Playground`,
                 content: fileBase64
             })
         });
@@ -228,5 +235,5 @@ app.post('/save-github', authenticateToken, async (req, res) => {
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-    console.log(\`Unified LogicSilicon Backend (Verilator + Yosys) running on port \${PORT}\`);
+    console.log(`Unified LogicSilicon Backend (Verilator + Yosys) running on port ${PORT}`);
 });
