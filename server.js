@@ -123,7 +123,7 @@ app.post('/run', authenticateToken, (req, res) => {
     // Verilator 5 compilation command
     const compileCmd = `verilator --binary --timing --trace -Wno-fatal -o sim_bin project.sv`;
 
-    exec(compileCmd, { timeout: 30000, cwd: runDir }, (compileErr, compileStdout, compileStderr) => {
+    exec(compileCmd, { timeout: 120000, cwd: runDir }, (compileErr, compileStdout, compileStderr) => {
         if (compileErr) {
             fs.rmSync(runDir, { recursive: true, force: true });
             return res.json({ status: "error", output: compileStderr || compileStdout || compileErr.message });
